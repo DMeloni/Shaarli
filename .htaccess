@@ -1,0 +1,7 @@
+
+RewriteEngine On
+
+#RewriteRule ^index.php$  http://shaarli.fr/my.php [R]
+RewriteRule ^(.+)/(.+)/(.+)$  $2/$3 [L]
+RewriteRule ^(.+)/$  index.php?pseudo=$1 [QSA]
+RewriteRule ^(.+)/index.php$  index.php?pseudo=$1 [QSA]

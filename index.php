@@ -10,9 +10,35 @@
 // so we have to do this for avoid the strict standard error.
 date_default_timezone_set('UTC');
 
+// DMeloni hack -- begin
+$_SERVER["QUERY_STRING"] = str_replace(sprintf('pseudo=%s&', $_GET['pseudo']), '', $_SERVER["QUERY_STRING"]);
+$_SERVER["QUERY_STRING"] = str_replace(sprintf('pseudo=%s', $_GET['pseudo']), '', $_SERVER["QUERY_STRING"]);
+
+if(isset($_GET['pseudo'])) {
+    $dataDir = sprintf('data-7987213-%s', $_GET['pseudo']);
+    if (!is_dir($dataDir)) {
+        mkdir($dataDir);
+    }
+}else{
+    ini_set('session.use_cookies', 1);       // Use cookies to store session.
+    ini_set('session.use_only_cookies', 1);  // Force cookies for session (phpsessionID forbidden in URL)
+    ini_set('session.use_trans_sid', false); // Prevent php to use sessionID in URL if cookies are disabled.
+
+    session_name('shaarli');
+    session_start();
+    if (isset($_SESSION['username'])) {
+        header('Location: ' . sprintf('https://www.shaarli.fr/my/%s/', $_SESSION['username']));
+        exit();
+    } else {
+        header('Location: http://shaarli.fr/my.php');
+        exit();
+    }
+}
+// DMeloni hack -- end
+
 // -----------------------------------------------------------------------------------------------
 // Hardcoded parameter (These parameters can be overwritten by creating the file /data/options.php)
-$GLOBALS['config']['DATADIR'] = 'data'; // Data subdirectory
+$GLOBALS['config']['DATADIR'] = $dataDir; // Data subdirectory
 $GLOBALS['config']['CONFIG_FILE'] = $GLOBALS['config']['DATADIR'].'/config.php'; // Configuration file (user login/password)
 $GLOBALS['config']['DATASTORE'] = $GLOBALS['config']['DATADIR'].'/datastore.php'; // Data storage file.
 $GLOBALS['config']['LINKS_PER_PAGE'] = 20; // Default links per page.
@@ -48,8 +74,18 @@ define('WEB_PATH', substr($_SERVER["REQUEST_URI"], 0, 1+strrpos($_SERVER["REQUES
 
 // Force cookie path (but do not change lifetime)
 $cookie=session_get_cookie_params();
-$cookiedir = ''; if(dirname($_SERVER['SCRIPT_NAME'])!='/') $cookiedir=dirname($_SERVER["SCRIPT_NAME"]).'/';
-session_set_cookie_params($cookie['lifetime'],$cookiedir,$_SERVER['SERVER_NAME']); // Set default cookie expiration and path.
+
+// DMeloni hack -- begin
+//$cookiedir = ''; if(dirname($_SERVER['SCRIPT_NAME'])!='/') $cookiedir=dirname($_SERVER["SCRIPT_NAME"]).'/';
+$cookiedir = '/';
+
+//session_set_cookie_params($cookie['lifetime'],$cookiedir,$_SERVER['HTTP_HOST']); // Set default cookie expiration and path.
+session_set_cookie_params($cookie['lifetime'],$cookiedir, 'shaarli.fr'); // Set default cookie expiration and path.
+// DMeloni hack -- end
+
+// DMeloni hack -- begin
+ini_set('session.cookie_domain', '.shaarli.fr');
+// DMeloni hack -- end
 
 // Set session parameters on server side.
 define('INACTIVITY_TIMEOUT',3600); // (in seconds). If the user does not access any page within this time, his/her session is considered expired.
@@ -135,24 +171,37 @@ function setup_login_state() {
 	    fillSessionInfo();
 	    $userIsLoggedIn = true;
 	}
-	// If session does not exist on server side, or IP address has changed, or session has expired, logout.
-	if (empty($_SESSION['uid']) ||
-	    ($GLOBALS['disablesessionprotection']==false && $_SESSION['ip']!=allIPs()) ||
-	    time() >= $_SESSION['expires_on'])
-	{
-	    logout();
-	    $userIsLoggedIn = false;
-	    $loginFailure = true;
-	}
-	if (!empty($_SESSION['longlastingsession'])) {
-	    $_SESSION['expires_on']=time()+$_SESSION['longlastingsession']; // In case of "Stay signed in" checked.
-	}
-	else {
-	    $_SESSION['expires_on']=time()+INACTIVITY_TIMEOUT; // Standard session expiration date.
-	}
-	if (!$loginFailure) {
-	    $userIsLoggedIn = true;
-	}
+
+    // DMeloni hack -- start
+    if(!empty($_GET['pseudo']) 
+    && isset($_SESSION['username']) 
+    && $_GET['pseudo'] !== $_SESSION['username'])
+    {
+        $userIsLoggedIn = false;
+    } else {
+    // DMeloni hack -- end
+    
+        // If session does not exist on server side, or IP address has changed, or session has expired, logout.
+        if (empty($_SESSION['uid']) ||
+            ($GLOBALS['disablesessionprotection']==false && $_SESSION['ip']!=allIPs()) ||
+            time() >= $_SESSION['expires_on'])
+        {
+            logout();
+            $userIsLoggedIn = false;
+            $loginFailure = true;
+        }
+        if (!empty($_SESSION['longlastingsession'])) {
+            $_SESSION['expires_on']=time()+$_SESSION['longlastingsession']; // In case of "Stay signed in" checked.
+        }
+        else {
+            $_SESSION['expires_on']=time()+INACTIVITY_TIMEOUT; // Standard session expiration date.
+        }
+        if (!$loginFailure) {
+            $userIsLoggedIn = true;
+        }
+    }
+
+
 
 	return $userIsLoggedIn;
 }
@@ -450,15 +499,24 @@ if (isset($_POST['login']))
             $_SESSION['longlastingsession']=31536000;  // (31536000 seconds = 1 year)
             $_SESSION['expires_on']=time()+$_SESSION['longlastingsession'];  // Set session expiration on server-side.
 
-            $cookiedir = ''; if(dirname($_SERVER['SCRIPT_NAME'])!='/') $cookiedir=dirname($_SERVER["SCRIPT_NAME"]).'/';
-            session_set_cookie_params($_SESSION['longlastingsession'],$cookiedir,$_SERVER['SERVER_NAME']); // Set session cookie expiration on client side
-            // Note: Never forget the trailing slash on the cookie path!
+            // DMeloni hack -- begin
+            $cookiedir = '/';
+            //session_set_cookie_params($_SESSION['longlastingsession'],$cookiedir,$_SERVER['HTTP_HOST']); // Set session cookie expiration on client side
+            session_set_cookie_params($_SESSION['longlastingsession'],$cookiedir, 'shaarli.fr'); // Set session cookie expiration on client side
+            // DMeloni hack -- end
+
+           // Note: Never forget the trailing slash on the cookie path!
             session_regenerate_id(true);  // Send cookie with new expiration date to browser.
         }
         else // Standard session expiration (=when browser closes)
         {
+            // DMeloni hack -- begin
             $cookiedir = ''; if(dirname($_SERVER['SCRIPT_NAME'])!='/') $cookiedir=dirname($_SERVER["SCRIPT_NAME"]).'/';
-            session_set_cookie_params(0,$cookiedir,$_SERVER['SERVER_NAME']); // 0 means "When browser closes"
+            $cookiedir = '/';
+            //session_set_cookie_params(0,$cookiedir,$_SERVER['HTTP_HOST']); // 0 means "When browser closes"
+            session_set_cookie_params(0,$cookiedir, 'shaarli.fr'); // 0 means "When browser closes"
+            // DMeloni hack -- end
+
             session_regenerate_id(true);
         }
         // Optional redirect after login:
@@ -501,6 +559,13 @@ function indexUrl()
     // If the script is named 'index.php', we remove it (for better looking URLs,
     // e.g. http://mysite.com/shaarli/?abcde instead of http://mysite.com/shaarli/index.php?abcde)
     if (endswith($scriptname,'index.php')) $scriptname = substr($scriptname,0,strlen($scriptname)-9);
+    
+    // DMeloni hack -- begin
+    if (isset($_GET['pseudo'])) {
+        return sprintf('%s%s%s/', serverUrl(), $scriptname, $_GET['pseudo']);
+    }
+    // DMeloni hack -- end
+
     return serverUrl() . $scriptname;
 }
 
@@ -1253,6 +1318,18 @@ function renderPage()
         $PAGE->renderPage('loginform');
         exit;
     }
+
+    // DMeloni hack -- begin
+    // -------- User wants to logout.
+    if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=logouts'))
+    {
+        invalidateCaches();
+        logout();
+        header('Location: https://www.shaarli.fr');
+        exit;
+    }
+    // DMeloni hack -- end
+    
     // -------- User wants to logout.
     if (isset($_SERVER["QUERY_STRING"]) && startswith($_SERVER["QUERY_STRING"],'do=logout'))
     {
@@ -2254,6 +2331,11 @@ function install()
     $PAGE = new pageBuilder;
     $PAGE->assign('timezone_html',$timezone_html);
     $PAGE->assign('timezone_js',$timezone_js);
+
+    // DMeloni hack -- begin
+    $PAGE->assign('pseudo', htmlentities($_GET['pseudo']));
+    // DMeloni hack -- end
+
     $PAGE->renderPage('install');
     exit;
 }
